@@ -40,6 +40,19 @@ namespace Cryptlex.NetCore
             this._rsaPublicKey = File.ReadAllText(path, Encoding.UTF8);
         }
 
+        public void SetRsaPublicKeyContents(string contents)
+        {
+            if (String.IsNullOrEmpty(this._productId))
+            {
+                throw new LexActivatorException(LexStatusCodes.LA_E_PRODUCT_ID);
+            }
+            if (String.IsNullOrEmpty(contents))
+            {
+                throw new LexActivatorException(LexStatusCodes.LA_E_RSA_PUBLIC_KEY);
+            }
+
+            this._rsaPublicKey = contents;
+        }
         /// <summary>
         /// Sets the product id of your application.
         /// 
