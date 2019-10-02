@@ -2,6 +2,10 @@
 
     <PropertyGroup>
         <TargetFramework>netstandard2.0</TargetFramework>
+        <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+        <Authors>andy.bell@displaynote.com</Authors>
+        <RepositoryUrl>https://github.com/DisplayNote/Cryptlex.NetCore</RepositoryUrl>
+        <Company>DisplayNote Technologies</Company>
     </PropertyGroup>
 
     <ItemGroup>

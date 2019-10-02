@@ -1,0 +1,9 @@
+/Users/andrewbell/RiderProjects/Cryptlex.NetCore/Cryptlex.NetCore/bin/Release/netstandard2.0/Cryptlex.NetCore.deps.json
+/Users/andrewbell/RiderProjects/Cryptlex.NetCore/Cryptlex.NetCore/bin/Release/netstandard2.0/Cryptlex.NetCore.dll
+/Users/andrewbell/RiderProjects/Cryptlex.NetCore/Cryptlex.NetCore/bin/Release/netstandard2.0/Cryptlex.NetCore.pdb
+/Users/andrewbell/RiderProjects/Cryptlex.NetCore/Cryptlex.NetCore/obj/Release/netstandard2.0/Cryptlex.NetCore.csprojAssemblyReference.cache
+/Users/andrewbell/RiderProjects/Cryptlex.NetCore/Cryptlex.NetCore/obj/Release/netstandard2.0/Cryptlex.NetCore.csproj.CoreCompileInputs.cache
+/Users/andrewbell/RiderProjects/Cryptlex.NetCore/Cryptlex.NetCore/obj/Release/netstandard2.0/Cryptlex.NetCore.AssemblyInfoInputs.cache
+/Users/andrewbell/RiderProjects/Cryptlex.NetCore/Cryptlex.NetCore/obj/Release/netstandard2.0/Cryptlex.NetCore.AssemblyInfo.cs
+/Users/andrewbell/RiderProjects/Cryptlex.NetCore/Cryptlex.NetCore/obj/Release/netstandard2.0/Cryptlex.NetCore.dll
+/Users/andrewbell/RiderProjects/Cryptlex.NetCore/Cryptlex.NetCore/obj/Release/netstandard2.0/Cryptlex.NetCore.pdb
