@@ -3,23 +3,76 @@ using System;
 using System.IO;
 using System.Text;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using Cryptlex.NetCore;
+using Cryptlex.NetCore.Contracts;
 using Cryptlex.NetCore.Models;
 using Cryptlex.NetCore.Services;
+using Org.BouncyCastle.Crypto.Paddings;
 
 namespace Cryptlex.NetCore
 {
     public class LicenseManager
     {
-        private string _productId;
         private string _rsaPublicKey;
-        private string _licenseKey;
         private Timer _timer;
         public delegate void CallbackType(int status);
         private CallbackType _callback;
+        private readonly LexActivationService _lexActivationService;
         private ActivationPayload _activationPayload;
+        private LexValidator LexValidator { get; set; }
+        private LexDataStore DataStore { get; set; }
+        
+        public static ISystemInfo SystemInfo { get; set; }
+        public static string ClientVersion { get; set; }
+        public static string AppVersion { get; set; }
+        public string ProductId
+        {
+            get => ProductId;
+            set
+            {
+                if (!LexValidator.ValidateProductId(value))
+                {
+                    throw new LexActivatorException(LexStatusCodes.LA_E_PRODUCT_ID);
+                }
+                ProductId = value;
+            }
+        }
 
+        public string LicenceKey
+        {
+            get
+            {
+                if (!string.IsNullOrEmpty(LicenceKey)) return LicenceKey;
+                LicenceKey = DataStore.GetValue(ProductId, LexConstants.KEY_LICENSE_KEY);
+                if (string.IsNullOrEmpty(LicenceKey))
+                {
+                    throw new LexActivatorException(LexStatusCodes.LA_E_LICENSE_KEY);
+                }
+
+                return LicenceKey;
+            }
+            set
+            {
+                if (!LexValidator.ValidateLicenseKey(value))
+                {
+                    throw new LexActivatorException(LexStatusCodes.LA_E_LICENSE_KEY);
+                }
+                
+                LicenceKey = value;
+                DataStore.SaveValue(ProductId, LexConstants.KEY_LICENSE_KEY, LicenceKey);
+            }
+        }
+
+        public LicenseManager(IPersistence persistence, ISystemInfo systemInfo)
+        {
+            DataStore = new LexDataStore(persistence);
+            LexValidator = new LexValidator(DataStore);
+            SystemInfo = systemInfo;
+            
+            _lexActivationService = new LexActivationService(DataStore, LexValidator);
+        }
         /// <summary>
         /// Sets the RSA public key.
         /// 
@@ -29,67 +82,22 @@ namespace Cryptlex.NetCore
         /// <param name="path">path of the RSA public key file</param>
         public void SetRsaPublicKey(string path)
         {
-            if (String.IsNullOrEmpty(this._productId))
-            {
-                throw new LexActivatorException(LexStatusCodes.LA_E_PRODUCT_ID);
-            }
             if (!File.Exists(path))
             {
                 throw new LexActivatorException(LexStatusCodes.LA_E_FILE_PATH);
             }
-            this._rsaPublicKey = File.ReadAllText(path, Encoding.UTF8);
+            
+            _rsaPublicKey = File.ReadAllText(path, Encoding.UTF8);
         }
 
         public void SetRsaPublicKeyContents(string contents)
         {
-            if (String.IsNullOrEmpty(this._productId))
-            {
-                throw new LexActivatorException(LexStatusCodes.LA_E_PRODUCT_ID);
-            }
-            if (String.IsNullOrEmpty(contents))
+            if (string.IsNullOrEmpty(contents))
             {
                 throw new LexActivatorException(LexStatusCodes.LA_E_RSA_PUBLIC_KEY);
             }
 
-            this._rsaPublicKey = contents;
-        }
-        /// <summary>
-        /// Sets the product id of your application.
-        /// 
-        /// This function must be called on every start of your program before
-        /// any other functions are called, with the exception of SetProductFile()
-        /// or SetProductData() function.
-        /// </summary>
-        /// <param name="productId">the unique product id of your application as mentioned on the product page in the dashboard</param>
-        public void SetProductId(string productId)
-        {
-            if (!LexValidator.ValidateProductId(productId))
-            {
-                throw new LexActivatorException(LexStatusCodes.LA_E_PRODUCT_ID);
-            }
-            this._productId = productId;
-        }
-
-        /// <summary>
-        /// Sets the license key required to activate the license.
-        /// </summary>
-        /// <param name="licenseKey">a valid license key</param>
-        public void SetLicenseKey(string licenseKey)
-        {
-            if (String.IsNullOrEmpty(this._productId))
-            {
-                throw new LexActivatorException(LexStatusCodes.LA_E_PRODUCT_ID);
-            }
-            if (String.IsNullOrEmpty(this._rsaPublicKey))
-            {
-                throw new LexActivatorException(LexStatusCodes.LA_E_RSA_PUBLIC_KEY);
-            }
-            if (!LexValidator.ValidateLicenseKey(licenseKey))
-            {
-                throw new LexActivatorException(LexStatusCodes.LA_E_LICENSE_KEY);
-            }
-            this._licenseKey = licenseKey;
-            LexDataStore.SaveValue(this._productId, LexConstants.KEY_LICENSE_KEY, licenseKey);
+            _rsaPublicKey = contents;
         }
 
         /// <summary>
@@ -104,29 +112,13 @@ namespace Cryptlex.NetCore
         /// <param name="callback"></param>
         public void SetLicenseCallback(CallbackType callback)
         {
-            if (String.IsNullOrEmpty(this._productId))
+            if (String.IsNullOrEmpty(ProductId))
             {
                 throw new LexActivatorException(LexStatusCodes.LA_E_PRODUCT_ID);
             }
-            this._callback = callback;
+            _callback = callback;
         }
-
-        /// <summary>
-        /// Sets the current app version of your application.
-        /// 
-        /// The app version appears along with the activation details in dashboard. It
-        /// is also used to generate app analytics.
-        /// </summary>
-        /// <param name="appVersion"></param>
-        public void SetAppVersion(string appVersion)
-        {
-            if (String.IsNullOrEmpty(this._productId))
-            {
-                throw new LexActivatorException(LexStatusCodes.LA_E_PRODUCT_ID);
-            }
-            LexDataStore.AppVersion = appVersion;
-        }
-
+        
         /// <summary>
         /// Gets the license metadata of the license.
         /// </summary>
@@ -134,17 +126,14 @@ namespace Cryptlex.NetCore
         /// <returns>Returns the value of metadata for the key.</returns>
         public string GetLicenseMetadata(string key)
         {
-            int status = IsLicenseValid();
-            if (LexValidator.ValidateSuccessCode(status))
+            var status = IsLicenseValid();
+            if (!LexValidator.ValidateSuccessCode(status)) throw new LexActivatorException(status);
+            var value = LexActivationService.GetMetadata(key, _activationPayload.LicenseMetadata);
+            if (value == null)
             {
-                string value = LexActivationService.GetMetadata(key, _activationPayload.LicenseMetadata);
-                if (value == null)
-                {
-                    throw new LexActivatorException(LexStatusCodes.LA_E_METADATA_KEY_NOT_FOUND);
-                }
-                return value;
+                throw new LexActivatorException(LexStatusCodes.LA_E_METADATA_KEY_NOT_FOUND);
             }
-            throw new LexActivatorException(status);
+            return value;
         }
 
         /// <summary>
@@ -154,35 +143,14 @@ namespace Cryptlex.NetCore
         /// <returns>Returns the values of meter attribute allowed and total uses.</returns>
         public LicenseMeterAttribute GetLicenseMeterAttribute(string name)
         {
-            int status = IsLicenseValid();
-            if (LexValidator.ValidateSuccessCode(status))
+            var status = IsLicenseValid();
+            if (!LexValidator.ValidateSuccessCode(status)) throw new LexActivatorException(status);
+            var licenseMeterAttribute = LexActivationService.GetLicenseMeterAttribute(name, _activationPayload.LicenseMeterAttributes);
+            if (licenseMeterAttribute == null)
             {
-                var licenseMeterAttribute = LexActivationService.GetLicenseMeterAttribute(name, _activationPayload.LicenseMeterAttributes);
-                if (licenseMeterAttribute == null)
-                {
-                    throw new LexActivatorException(LexStatusCodes.LA_E_METER_ATTRIBUTE_NOT_FOUND);
-                }
-                return licenseMeterAttribute;
+                throw new LexActivatorException(LexStatusCodes.LA_E_METER_ATTRIBUTE_NOT_FOUND);
             }
-            throw new LexActivatorException(status);
-        }
-
-        /// <summary>
-        /// Gets the license key used for activation.
-        /// </summary>
-        /// <returns>Returns the license key.</returns>
-        public string GetLicenseKey()
-        {
-            if (String.IsNullOrEmpty(this._productId))
-            {
-                throw new LexActivatorException(LexStatusCodes.LA_E_PRODUCT_ID);
-            }
-            string licenseKey = LexDataStore.GetValue(this._productId, LexConstants.KEY_LICENSE_KEY);
-            if (String.IsNullOrEmpty(licenseKey))
-            {
-                throw new LexActivatorException(LexStatusCodes.LA_E_LICENSE_KEY);
-            }
-            return licenseKey;
+            return licenseMeterAttribute;
         }
 
         /// <summary>
@@ -191,7 +159,7 @@ namespace Cryptlex.NetCore
         /// <returns>Returns the timestamp.</returns>
         public long GetLicenseExpiryDate()
         {
-            int status = IsLicenseValid();
+            var status = IsLicenseValid();
             if (LexValidator.ValidateSuccessCode(status))
             {
                 return _activationPayload.ExpiresAt;
@@ -205,7 +173,7 @@ namespace Cryptlex.NetCore
         /// <returns>Returns the license user email.</returns>
         public string GetLicenseUserEmail()
         {
-            int status = IsLicenseValid();
+            var status = IsLicenseValid();
             if (LexValidator.ValidateSuccessCode(status))
             {
                 return _activationPayload.Email;
@@ -248,17 +216,14 @@ namespace Cryptlex.NetCore
         /// <returns>Returns the value of metadata for the key.</returns>
         public string GetLicenseUserMetadata(string key)
         {
-            int status = IsLicenseValid();
-            if (LexValidator.ValidateSuccessCode(status))
+            var status = IsLicenseValid();
+            if (!LexValidator.ValidateSuccessCode(status)) throw new LexActivatorException(status);
+            var value = LexActivationService.GetMetadata(key, _activationPayload.UserMetadata);
+            if (value == null)
             {
-                string value = LexActivationService.GetMetadata(key, _activationPayload.UserMetadata);
-                if (value == null)
-                {
-                    throw new LexActivatorException(LexStatusCodes.LA_E_METADATA_KEY_NOT_FOUND);
-                }
-                return value;
+                throw new LexActivatorException(LexStatusCodes.LA_E_METADATA_KEY_NOT_FOUND);
             }
-            throw new LexActivatorException(status);
+            return value;
         }
 
         /// <summary>
@@ -267,7 +232,7 @@ namespace Cryptlex.NetCore
         /// <returns>Returns the license type.</returns>
         public string GetLicenseType()
         {
-            int status = IsLicenseValid();
+            var status = IsLicenseValid();
             if (LexValidator.ValidateSuccessCode(status))
             {
                 return _activationPayload.Type;
@@ -282,23 +247,14 @@ namespace Cryptlex.NetCore
         /// <returns>Returns the value of meter attribute uses by the activation.</returns>
         public long GetActivationMeterAttributeUses(string name)
         {
-            int status = IsLicenseValid();
-            if (LexValidator.ValidateSuccessCode(status))
+            var status = IsLicenseValid();
+            if (!LexValidator.ValidateSuccessCode(status)) throw new LexActivatorException(status);
+            if (!LexActivationService.MeterAttributeExists(name, _activationPayload.LicenseMeterAttributes))
             {
-                bool exists = false;
-                exists = LexActivationService.MeterAttributeExists(name, _activationPayload.LicenseMeterAttributes);
-                if (!exists)
-                {
-                    throw new LexActivatorException(LexStatusCodes.LA_E_METER_ATTRIBUTE_NOT_FOUND);
-                }
-                var activationMeterAttribute = LexActivationService.GetActivationMeterAttribute(name, _activationPayload.ActivationMeterAttributes);
-                if (activationMeterAttribute == null)
-                {
-                    return 0;
-                }
-                return activationMeterAttribute.Uses;
+                throw new LexActivatorException(LexStatusCodes.LA_E_METER_ATTRIBUTE_NOT_FOUND);
             }
-            throw new LexActivatorException(status);
+            var activationMeterAttribute = LexActivationService.GetActivationMeterAttribute(name, _activationPayload.ActivationMeterAttributes);
+            return activationMeterAttribute?.Uses ?? 0;
         }
 
         /// <summary>
@@ -312,30 +268,21 @@ namespace Cryptlex.NetCore
         /// <returns>LA_OK, LA_EXPIRED, LA_SUSPENDED, LA_FAIL</returns>
         public int ActivateLicense()
         {
-            if (String.IsNullOrEmpty(this._productId))
+            if (string.IsNullOrEmpty(ProductId))
             {
                 throw new LexActivatorException(LexStatusCodes.LA_E_PRODUCT_ID);
             }
-            if (String.IsNullOrEmpty(this._rsaPublicKey))
+            if (string.IsNullOrEmpty(_rsaPublicKey))
             {
                 throw new LexActivatorException(LexStatusCodes.LA_E_RSA_PUBLIC_KEY);
             }
 
-            _licenseKey = LexDataStore.GetValue(this._productId, LexConstants.KEY_LICENSE_KEY);
-            if (String.IsNullOrEmpty(_licenseKey))
-            {
-                throw new LexActivatorException(LexStatusCodes.LA_E_LICENSE_KEY);
-            }
-
             _activationPayload = new ActivationPayload();
             var meterAttributes = new List<ActivationMeterAttribute>();
-            int status = LexActivationService.ActivateFromServer(_productId, _licenseKey, _rsaPublicKey, _activationPayload, meterAttributes);
-            if (LexValidator.ValidateSuccessCode(status))
-            {
-                StartTimer(_activationPayload.ServerSyncInterval, _activationPayload.ServerSyncInterval);
-                return status;
-            }
-            throw new LexActivatorException(status);
+            var status = _lexActivationService.ActivateFromServer(ProductId, LicenceKey, _rsaPublicKey, _activationPayload, meterAttributes);
+            if (!LexValidator.ValidateSuccessCode(status)) throw new LexActivatorException(status);
+            StartTimer(_activationPayload.ServerSyncInterval, _activationPayload.ServerSyncInterval);
+            return status;
         }
 
         /// <summary>
@@ -348,14 +295,12 @@ namespace Cryptlex.NetCore
         /// <returns>LA_OK</returns>
         public int DeactivateLicense()
         {
-            int status = IsLicenseValid();
-            if (LexValidator.ValidateSuccessCode(status))
+            var status = IsLicenseValid();
+            if (!LexValidator.ValidateSuccessCode(status)) throw new LexActivatorException(status);
+            status = _lexActivationService.DeactivateFromServer(ProductId, _activationPayload);
+            if (status == LexStatusCodes.LA_OK)
             {
-                status = LexActivationService.DeactivateFromServer(_productId, _activationPayload);
-                if (status == LexStatusCodes.LA_OK)
-                {
-                    return status;
-                }
+                return status;
             }
             throw new LexActivatorException(status);
         }
@@ -376,7 +321,7 @@ namespace Cryptlex.NetCore
         /// <returns>LA_OK, LA_EXPIRED, LA_SUSPENDED, LA_GRACE_PERIOD_OVER, LA_FAIL</returns>
         public int IsLicenseGenuine()
         {
-            int status = IsLicenseValid();
+            var status = IsLicenseValid();
             if (LexValidator.ValidateSuccessCode(status) && _activationPayload.ServerSyncInterval != 0)
             {
                 StartTimer(LexConstants.SERVER_SYNC_DELAY, _activationPayload.ServerSyncInterval);
@@ -410,30 +355,26 @@ namespace Cryptlex.NetCore
         /// <returns>LA_OK, LA_EXPIRED, LA_SUSPENDED, LA_GRACE_PERIOD_OVER, LA_FAIL</returns>
         private int IsLicenseValid()
         {
-            if (String.IsNullOrEmpty(this._productId))
+            if (string.IsNullOrEmpty(ProductId))
             {
                 return LexStatusCodes.LA_E_PRODUCT_ID;
             }
-            if (!LexValidator.ValidateSystemTime(this._productId))
+            if (!LexValidator.ValidateSystemTime(ProductId))
             {
                 return LexStatusCodes.LA_E_TIME_MODIFIED;
             }
-            _licenseKey = LexDataStore.GetValue(this._productId, LexConstants.KEY_LICENSE_KEY);
-            if (!LexValidator.ValidateLicenseKey(_licenseKey))
-            {
-                return LexStatusCodes.LA_E_LICENSE_KEY;
-            }
-            string jwt = LexDataStore.GetValue(_productId, LexConstants.KEY_ACTIVATION_JWT);
-            if (String.IsNullOrEmpty(jwt))
+            
+            var jwt = DataStore.GetValue(ProductId, LexConstants.KEY_ACTIVATION_JWT);
+            if (string.IsNullOrEmpty(jwt))
             {
                 return LexStatusCodes.LA_FAIL;
             }
             if (_activationPayload != null && _activationPayload.IsValid)
             {
-                return LexValidator.ValidateActivationStatus(_productId, _activationPayload);
+                return LexValidator.ValidateActivationStatus(ProductId, _activationPayload);
             }
             _activationPayload = new ActivationPayload();
-            return LexValidator.ValidateActivation(jwt, _rsaPublicKey, _licenseKey, _productId, _activationPayload);
+            return LexValidator.ValidateActivation(jwt, _rsaPublicKey, LicenceKey, ProductId, _activationPayload);
         }
 
         /// <summary>
@@ -443,10 +384,10 @@ namespace Cryptlex.NetCore
         /// <param name="increment">the increment value</param>
         public void IncrementActivationMeterAttributeUses(string name, uint increment)
         {
-            long currentUses = GetActivationMeterAttributeUses(name);
-            long uses = currentUses + increment;
-            List<ActivationMeterAttribute> meterAttributes = _activationPayload.ActivationMeterAttributes;
-            int status = UpdateMeterAttributeUses(name, meterAttributes, uses);
+            var currentUses = GetActivationMeterAttributeUses(name);
+            var uses = currentUses + increment;
+            var meterAttributes = _activationPayload.ActivationMeterAttributes;
+            var status = UpdateMeterAttributeUses(name, meterAttributes, uses);
             if (!LexValidator.ValidateSuccessCode(status))
             {
                 throw new LexActivatorException(status);
@@ -460,14 +401,14 @@ namespace Cryptlex.NetCore
         /// <param name="decrement">the decrement value</param>
         public void DecrementActivationMeterAttributeUses(string name, uint decrement)
         {
-            long currentUses = GetActivationMeterAttributeUses(name);
+            var currentUses = GetActivationMeterAttributeUses(name);
             if (decrement > currentUses)
             {
                 decrement = (uint)currentUses;
             }
-            long uses = currentUses - decrement;
-            List<ActivationMeterAttribute> meterAttributes = _activationPayload.ActivationMeterAttributes;
-            int status = UpdateMeterAttributeUses(name, meterAttributes, uses);
+            var uses = currentUses - decrement;
+            var meterAttributes = _activationPayload.ActivationMeterAttributes;
+            var status = UpdateMeterAttributeUses(name, meterAttributes, uses);
             if (!LexValidator.ValidateSuccessCode(status))
             {
                 throw new LexActivatorException(status);
@@ -480,9 +421,9 @@ namespace Cryptlex.NetCore
         /// <param name="name">name of the meter attribute</param>
         public void ResetActivationMeterAttributeUses(string name)
         {
-            long currentUses = GetActivationMeterAttributeUses(name);
-            List<ActivationMeterAttribute> meterAttributes = _activationPayload.ActivationMeterAttributes;
-            int status = UpdateMeterAttributeUses(name, meterAttributes, 0);
+            var currentUses = GetActivationMeterAttributeUses(name);
+            var meterAttributes = _activationPayload.ActivationMeterAttributes;
+            var status = UpdateMeterAttributeUses(name, meterAttributes, 0);
             if (!LexValidator.ValidateSuccessCode(status))
             {
                 throw new LexActivatorException(status);
@@ -491,23 +432,20 @@ namespace Cryptlex.NetCore
 
         private int UpdateMeterAttributeUses(string name, List<ActivationMeterAttribute> meterAttributes, long uses)
         {
-            string normalizedName = name.ToUpper();
-            bool exists = false;
-            foreach (var item in meterAttributes)
+            var normalizedName = name.ToUpper();
+            var exists = false;
+            foreach (var item in meterAttributes.Where(item => normalizedName == item.Name.ToUpper()))
             {
-                if (normalizedName == item.Name.ToUpper())
-                {
-                    item.Uses = uses; ;
-                    exists = true;
-                    break;
-                }
+                item.Uses = uses; ;
+                exists = true;
+                break;
             }
             if (!exists)
             {
                 meterAttributes.Add(new ActivationMeterAttribute(name, uses));
             }
 
-            int status = LexActivationService.ActivateFromServer(_productId, _licenseKey, _rsaPublicKey, _activationPayload, meterAttributes, true);
+            var status = _lexActivationService.ActivateFromServer(ProductId, LicenceKey, _rsaPublicKey, _activationPayload, meterAttributes, true);
             return status;
         }
 
@@ -519,35 +457,31 @@ namespace Cryptlex.NetCore
                 return;
             }
             var meterAttributes = new List<ActivationMeterAttribute>();
-            int status = LexActivationService.ActivateFromServer(_productId, _licenseKey, _rsaPublicKey, _activationPayload, meterAttributes, true);
+            var status = _lexActivationService.ActivateFromServer(ProductId, LicenceKey, _rsaPublicKey, _activationPayload, meterAttributes, true);
             if (!LexValidator.ValidateServerSyncAllowedStatusCodes(status))
             {
                 StopTimer();
-                this._callback(status);
+                _callback(status);
                 return;
             }
-            this._callback(status);
+            _callback(status);
         }
 
         private void StartTimer(long dueTime, long interval)
         {
-            if (_callback != null)
+            if (_callback == null) return;
+            if(_timer != null)
             {
-                if(_timer != null)
-                {
-                    return;
-                }
-                _timer = new Timer(LicenseTimerCallback, null, dueTime * 1000, interval * 1000);
+                return;
             }
+            _timer = new Timer(LicenseTimerCallback, null, dueTime * 1000, interval * 1000);
         }
 
         private void StopTimer()
         {
-            if (_timer != null)
-            {
-                _timer.Dispose();
-                _timer = null;
-            }
+            if (_timer == null) return;
+            _timer.Dispose();
+            _timer = null;
         }
     }
 }

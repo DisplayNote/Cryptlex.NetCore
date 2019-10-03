@@ -3,6 +3,7 @@ using System.Text;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.ComponentModel;
 using Newtonsoft.Json;
 
 using System.Net;
@@ -13,8 +14,15 @@ namespace Cryptlex.NetCore.Services
 {
     public class LexActivationService
     {
+        private LexDataStore _dataStore;
+        private LexValidator _lexValidator;
 
-        public static int ActivateFromServer(string productId, string licenseKey, string publicKey, ActivationPayload activationPayload, List<ActivationMeterAttribute> meterAttributes, bool serverSync = false)
+        public LexActivationService(LexDataStore dataStore, LexValidator lexValidator)
+        {
+            _dataStore = dataStore;
+            _lexValidator = lexValidator;
+        }
+        public int ActivateFromServer(string productId, string licenseKey, string publicKey, ActivationPayload activationPayload, List<ActivationMeterAttribute> meterAttributes, bool serverSync = false)
         {
             var metadata = new List<ActivationMetadata>();
             string jsonBody = GetActivationRequest(licenseKey, productId, metadata, meterAttributes);
@@ -54,10 +62,10 @@ namespace Cryptlex.NetCore.Services
             var json = httpResponse.Content.ReadAsStringAsync().Result;
             var activationResponse = JsonConvert.DeserializeObject<ActivationResponse>(json);
             string jwt = activationResponse.ActivationToken;
-            return LexValidator.ValidateActivation(jwt, publicKey, licenseKey, productId, activationPayload);
+            return _lexValidator.ValidateActivation(jwt, publicKey, licenseKey, productId, activationPayload);
         }
 
-        public static int ActivationErrorHandler(string productId, HttpResponseMessage httpResponse)
+        public int ActivationErrorHandler(string productId, HttpResponseMessage httpResponse)
         {
             if (httpResponse.StatusCode == HttpStatusCode.InternalServerError || httpResponse.StatusCode == HttpStatusCode.ServiceUnavailable)
             {
@@ -69,7 +77,7 @@ namespace Cryptlex.NetCore.Services
             }
             if (httpResponse.StatusCode == HttpStatusCode.NotFound)
             {
-                LexDataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
+                _dataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
                 return LexStatusCodes.LA_E_ACTIVATION_NOT_FOUND;
             }
             if (httpResponse.StatusCode == HttpStatusCode.BadRequest)
@@ -82,47 +90,47 @@ namespace Cryptlex.NetCore.Services
                 // server sync fp validation failed
                 if (errorResponse.Code == LexConstants.ActivationErrorCodes.INVALID_ACTIVATION_FINGERPRINT)
                 {
-                    LexDataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
+                    _dataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
                     return LexStatusCodes.LA_E_MACHINE_FINGERPRINT;
                 }
                 if (errorResponse.Code == LexConstants.ActivationErrorCodes.VM_ACTIVATION_NOT_ALLOWED)
                 {
-                    LexDataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
+                    _dataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
                     return LexStatusCodes.LA_E_VM;
                 }
                 if (errorResponse.Code == LexConstants.ActivationErrorCodes.INVALID_PRODUCT_ID)
                 {
-                    LexDataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
+                    _dataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
                     return LexStatusCodes.LA_E_PRODUCT_ID;
                 }
                 if (errorResponse.Code == LexConstants.ActivationErrorCodes.INVALID_LICENSE_KEY)
                 {
-                    LexDataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
+                    _dataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
                     return LexStatusCodes.LA_E_LICENSE_KEY;
                 }
                 if (errorResponse.Code == LexConstants.ActivationErrorCodes.AUTHENTICATION_FAILED)
                 {
-                    LexDataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
+                    _dataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
                     return LexStatusCodes.LA_E_AUTHENTICATION_FAILED;
                 }
                 if (errorResponse.Code == LexConstants.ActivationErrorCodes.COUNTRY_NOT_ALLOWED)
                 {
-                    LexDataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
+                    _dataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
                     return LexStatusCodes.LA_E_COUNTRY;
                 }
                 if (errorResponse.Code == LexConstants.ActivationErrorCodes.IP_ADDRESS_NOT_ALLOWED)
                 {
-                    LexDataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
+                    _dataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
                     return LexStatusCodes.LA_E_IP;
                 }
                 if (errorResponse.Code == LexConstants.ActivationErrorCodes.REVOKED_LICENSE)
                 {
-                    LexDataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
+                    _dataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
                     return LexStatusCodes.LA_E_REVOKED;
                 }
                 if (errorResponse.Code == LexConstants.ActivationErrorCodes.INVALID_LICENSE_TYPE)
                 {
-                    LexDataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
+                    _dataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
                     return LexStatusCodes.LA_E_LICENSE_TYPE;
                 }
                 if (errorResponse.Code == LexConstants.ActivationErrorCodes.METER_ATTRIBUTE_USES_LIMIT_REACHED)
@@ -134,7 +142,7 @@ namespace Cryptlex.NetCore.Services
             return LexStatusCodes.LA_E_INET;
         }
 
-        public static int DeactivateFromServer(string productId, ActivationPayload activationPayload)
+        public int DeactivateFromServer(string productId, ActivationPayload activationPayload)
         {
             var httpService = new LexHttpService();
             HttpResponseMessage httpResponse;
@@ -152,11 +160,11 @@ namespace Cryptlex.NetCore.Services
                 return DeactivationErrorHandler(productId, httpResponse);
             }
             activationPayload.IsValid = false;
-            LexDataStore.Reset(productId);
+            _dataStore.Reset(productId);
             return LexStatusCodes.LA_OK;
         }
 
-        public static int DeactivationErrorHandler(string productId, HttpResponseMessage httpResponse)
+        public int DeactivationErrorHandler(string productId, HttpResponseMessage httpResponse)
         {
             if (httpResponse.StatusCode == HttpStatusCode.InternalServerError || httpResponse.StatusCode == HttpStatusCode.ServiceUnavailable)
             {
@@ -168,7 +176,7 @@ namespace Cryptlex.NetCore.Services
             }
             if (httpResponse.StatusCode == HttpStatusCode.NotFound)
             {
-                LexDataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
+                _dataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
                 return LexStatusCodes.LA_E_ACTIVATION_NOT_FOUND;
             }
             if (httpResponse.StatusCode == HttpStatusCode.Conflict)
@@ -181,25 +189,27 @@ namespace Cryptlex.NetCore.Services
             }
             return LexStatusCodes.LA_E_CLIENT;
         }
-        public static string GetActivationRequest(string licenseKey, string productId, List<ActivationMetadata> metadata, List<ActivationMeterAttribute> meterAttributes)
+        public string GetActivationRequest(string licenseKey, string productId, List<ActivationMetadata> metadata, List<ActivationMeterAttribute> meterAttributes)
         {
-            var activationRequest = new ActivationRequest();
-            activationRequest.Fingerprint = LexSystemInfo.GetFingerPrint();
-            activationRequest.ProductId = productId;
-            activationRequest.Key = licenseKey;
-            activationRequest.Os = LexSystemInfo.GetOsName();
-            activationRequest.OsVersion = LexSystemInfo.GetOsVersion();
-            activationRequest.UserHash = LexEncryptionService.Sha256(LexSystemInfo.GetUser());
-            activationRequest.AppVersion = LexDataStore.AppVersion;
-            activationRequest.ClientVersion = LexDataStore.ClientVersion;
-            activationRequest.VmName = LexSystemInfo.GetVmName();
-            activationRequest.Hostname = LexSystemInfo.GetHostname();
-            activationRequest.Email = String.Empty;
-            activationRequest.Password = String.Empty;
-            activationRequest.Metadata = metadata;
-            activationRequest.MeterAttributes = meterAttributes;
-            string jsonBody = JsonConvert.SerializeObject(activationRequest);
-            return jsonBody;
+            var activationRequest = new ActivationRequest
+            {
+                Fingerprint = LexEncryptionService.Sha256(LicenseManager.SystemInfo.GetFingerPrint()),
+                ProductId = productId,
+                Key = licenseKey,
+                Os = LicenseManager.SystemInfo.GetOsName(),
+                OsVersion = LicenseManager.SystemInfo.GetOsVersion(),
+                UserHash = LexEncryptionService.Sha256(LicenseManager.SystemInfo.GetUser()),
+                AppVersion = LicenseManager.AppVersion,
+                ClientVersion = LicenseManager.ClientVersion,
+                VmName = LicenseManager.SystemInfo.GetVmName(),
+                Hostname = LicenseManager.SystemInfo.GetHostname(),
+                Email = string.Empty,
+                Password = string.Empty,
+                Metadata = metadata,
+                MeterAttributes = meterAttributes
+            };
+            
+            return JsonConvert.SerializeObject(activationRequest);
         }
 
         public static string GetMetadata(string key, List<Metadata> metadata)

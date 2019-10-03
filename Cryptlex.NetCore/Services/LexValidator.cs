@@ -6,7 +6,13 @@ namespace Cryptlex.NetCore.Services
 {
     public class LexValidator
     {
-        public static int ValidateActivation(string jwt, string publicKey, string licenseKey, string productId, ActivationPayload activationPayload)
+        private readonly LexDataStore _dataStore;
+
+        public LexValidator(LexDataStore dataStore)
+        {
+            _dataStore = dataStore;
+        }
+        public int ValidateActivation(string jwt, string publicKey, string licenseKey, string productId, ActivationPayload activationPayload)
         {
             string payload = LexJwtService.VerifyToken(jwt, publicKey);
             if (String.IsNullOrEmpty(payload))
@@ -25,7 +31,7 @@ namespace Cryptlex.NetCore.Services
             {
                 status = LexStatusCodes.LA_FAIL;
             }
-            else if (activationPayload.Fingerprint != LexSystemInfo.GetFingerPrint())
+            else if (activationPayload.Fingerprint != LicenseManager.SystemInfo.GetFingerPrint())
             {
                 status = LexStatusCodes.LA_E_MACHINE_FINGERPRINT;
             }
@@ -35,28 +41,28 @@ namespace Cryptlex.NetCore.Services
             }
             else
             {
-                status = LexValidator.ValidateActivationStatus(productId, activationPayload);
+                status = ValidateActivationStatus(productId, activationPayload);
             }
             if (status == LexStatusCodes.LA_OK || status == LexStatusCodes.LA_EXPIRED || status == LexStatusCodes.LA_SUSPENDED || status == LexStatusCodes.LA_GRACE_PERIOD_OVER)
             {
                 var now = GetUtcTimestamp();
-                LexDataStore.SaveValue(productId, LexConstants.KEY_LAST_RECORDED_TIME, now.ToString());
-                LexDataStore.SaveValue(productId, LexConstants.KEY_ACTIVATION_JWT, jwt);
+                _dataStore.SaveValue(productId, LexConstants.KEY_LAST_RECORDED_TIME, now.ToString());
+                _dataStore.SaveValue(productId, LexConstants.KEY_ACTIVATION_JWT, jwt);
             }
             else
             {
-                LexDataStore.SaveValue(productId, LexConstants.KEY_LAST_RECORDED_TIME, activationPayload.IssuedAt.ToString());
+                _dataStore.SaveValue(productId, LexConstants.KEY_LAST_RECORDED_TIME, activationPayload.IssuedAt.ToString());
             }
             return status;
         }
 
-        public static int ValidateActivationStatus(string productId, ActivationPayload activationPayload)
+        public int ValidateActivationStatus(string productId, ActivationPayload activationPayload)
         {
             var now = GetUtcTimestamp();
 
             if (activationPayload.LeaseExpiresAt != 0 && (activationPayload.LeaseExpiresAt < now || activationPayload.LeaseExpiresAt < activationPayload.IssuedAt))
             {
-                LexDataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
+                _dataStore.ResetValue(productId, LexConstants.KEY_ACTIVATION_JWT);
                 return LexStatusCodes.LA_FAIL;
             }
 
@@ -85,7 +91,7 @@ namespace Cryptlex.NetCore.Services
             }
         }
 
-        public static bool ValidateProductId(string productId)
+        public bool ValidateProductId(string productId)
         {
             Guid guid;
             if (!Guid.TryParse(productId, out guid))
@@ -95,7 +101,7 @@ namespace Cryptlex.NetCore.Services
             return true;
         }
 
-        public static bool ValidateLicenseKey(string licenseKey)
+        public bool ValidateLicenseKey(string licenseKey)
         {
             if (licenseKey.Length < LexConstants.MIN_PRODUCT_KEY_LENGTH)
             {
@@ -108,7 +114,7 @@ namespace Cryptlex.NetCore.Services
             return true;
         }
 
-        public static bool ValidateSuccessCode(int status)
+        public bool ValidateSuccessCode(int status)
         {
             if (status == LexStatusCodes.LA_OK || status == LexStatusCodes.LA_EXPIRED || status == LexStatusCodes.LA_GRACE_PERIOD_OVER || status == LexStatusCodes.LA_SUSPENDED || status == LexStatusCodes.LA_TRIAL_EXPIRED)
             {
@@ -117,7 +123,7 @@ namespace Cryptlex.NetCore.Services
             return false;
         }
 
-        public static bool ValidateServerSyncAllowedStatusCodes(long status)
+        public bool ValidateServerSyncAllowedStatusCodes(long status)
         {
             if (status == LexStatusCodes.LA_OK || status == LexStatusCodes.LA_EXPIRED || status == LexStatusCodes.LA_SUSPENDED)
             {
@@ -131,30 +137,23 @@ namespace Cryptlex.NetCore.Services
 
         }
 
-        public static bool ValidateTime(long timestamp, long allowedClockOffset)
+        private static bool ValidateTime(long timestamp, long allowedClockOffset)
         {
             var now = GetUtcTimestamp();
-            long timeDifference = (long)(timestamp - now);
-            if (timeDifference > allowedClockOffset)
-            {
-                return false;
-            }
+            var timeDifference = (long)(timestamp - now);
+            return timeDifference <= allowedClockOffset;
+        }
+
+        public bool ValidateSystemTime(string productId)
+        {
+            var now = GetUtcTimestamp();
+            var lastRecordedTimeStr = _dataStore.GetValue(productId, LexConstants.KEY_LAST_RECORDED_TIME);
+            if (!ValidateTime((long) Int32.Parse(lastRecordedTimeStr), LexConstants.ALLOWED_CLOCK_OFFSET)) return false;
+            _dataStore.SaveValue(productId, LexConstants.KEY_LAST_RECORDED_TIME, now.ToString());
             return true;
         }
 
-        public static bool ValidateSystemTime(string productId)
-        {
-            var now = GetUtcTimestamp();
-            var lastRecordedTimeStr = LexDataStore.GetValue(productId, LexConstants.KEY_LAST_RECORDED_TIME);
-            if (ValidateTime((long)Int32.Parse(lastRecordedTimeStr), LexConstants.ALLOWED_CLOCK_OFFSET))
-            {
-                LexDataStore.SaveValue(productId, LexConstants.KEY_LAST_RECORDED_TIME, now.ToString());
-                return true;
-            }
-            return false;
-        }
-
-        public static long GetUtcTimestamp()
+        private static long GetUtcTimestamp()
         {
             return (long)(DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1))).TotalSeconds;
         }
