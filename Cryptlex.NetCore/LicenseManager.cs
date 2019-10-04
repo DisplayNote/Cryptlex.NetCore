@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using Cryptlex.NetCore;
 using Cryptlex.NetCore.Contracts;
@@ -27,16 +28,18 @@ namespace Cryptlex.NetCore
         public static ISystemInfo SystemInfo { get; set; }
         public static string ClientVersion { get; set; }
         public static string AppVersion { get; set; }
+        private string _productId;
+        private string _licenceKey;
         public string ProductId
         {
-            get => ProductId;
+            get => _productId;
             set
             {
                 if (!LexValidator.ValidateProductId(value))
                 {
                     throw new LexActivatorException(LexStatusCodes.LA_E_PRODUCT_ID);
                 }
-                ProductId = value;
+                _productId = value;
             }
         }
 
@@ -44,14 +47,14 @@ namespace Cryptlex.NetCore
         {
             get
             {
-                if (!string.IsNullOrEmpty(LicenceKey)) return LicenceKey;
-                LicenceKey = DataStore.GetValue(ProductId, LexConstants.KEY_LICENSE_KEY);
-                if (string.IsNullOrEmpty(LicenceKey))
+                if (!string.IsNullOrEmpty(_licenceKey)) return _licenceKey;
+                _licenceKey = DataStore.GetValue(ProductId, LexConstants.KEY_LICENSE_KEY);
+                if (string.IsNullOrEmpty(_licenceKey))
                 {
                     throw new LexActivatorException(LexStatusCodes.LA_E_LICENSE_KEY);
                 }
 
-                return LicenceKey;
+                return _licenceKey;
             }
             set
             {
@@ -60,8 +63,8 @@ namespace Cryptlex.NetCore
                     throw new LexActivatorException(LexStatusCodes.LA_E_LICENSE_KEY);
                 }
                 
-                LicenceKey = value;
-                DataStore.SaveValue(ProductId, LexConstants.KEY_LICENSE_KEY, LicenceKey);
+                _licenceKey = value;
+                DataStore.SaveValue(ProductId, LexConstants.KEY_LICENSE_KEY, _licenceKey);
             }
         }
 
