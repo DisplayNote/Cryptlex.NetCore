@@ -31,7 +31,7 @@ namespace Cryptlex.NetCore.Services
             {
                 status = LexStatusCodes.LA_FAIL;
             }
-            else if (activationPayload.Fingerprint != LicenseManager.SystemInfo.GetFingerPrint())
+            else if (activationPayload.Fingerprint != LexEncryptionService.Sha256(LicenseManager.SystemInfo.GetFingerPrint()))
             {
                 status = LexStatusCodes.LA_E_MACHINE_FINGERPRINT;
             }
