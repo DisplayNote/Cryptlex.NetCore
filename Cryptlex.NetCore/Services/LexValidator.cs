@@ -148,6 +148,8 @@ namespace Cryptlex.NetCore.Services
         {
             var now = GetUtcTimestamp();
             var lastRecordedTimeStr = _dataStore.GetValue(productId, LexConstants.KEY_LAST_RECORDED_TIME);
+            if (lastRecordedTimeStr == null)
+                return false;
             if (!ValidateTime((long) Int32.Parse(lastRecordedTimeStr), LexConstants.ALLOWED_CLOCK_OFFSET)) return false;
             _dataStore.SaveValue(productId, LexConstants.KEY_LAST_RECORDED_TIME, now.ToString());
             return true;
