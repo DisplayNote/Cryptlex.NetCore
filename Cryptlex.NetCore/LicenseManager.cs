@@ -127,6 +127,29 @@ namespace Cryptlex.NetCore
             _callback = callback;
         }
 
+        public bool UpdateAvailable()
+        {
+            var (available, error) = LexReleaseService.UpdateAvailable(SystemInfo.GetOsName(), ProductId, AppVersion, LicenceKey);
+            
+            if (error)
+            {
+                throw new Exception("TODO");
+            }
+
+            return available;
+        } 
+
+        public (string url, string version) GetLatestRelease()
+        {
+            var (url, version, error) = LexReleaseService.LatestRelease(SystemInfo.GetOsName(), ProductId, LicenceKey);
+
+            if (error)
+            {
+                throw new Exception("TODO");
+            }
+
+            return (url, version);
+        }
         /// <summary>
         /// Gets the license metadata of the license.
         /// </summary>
