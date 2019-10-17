@@ -1,18 +1,20 @@
 ﻿{
-  "version": "1.1.0",
+  "version": "1.1.1",
   "restore": {
-    "projectUniqueName": "/Users/andrewbell/RiderProjects/Cryptlex.NetCore/Cryptlex.NetCore/Cryptlex.NetCore.csproj",
+    "projectUniqueName": "C:\\Users\\andyb\\RiderProjects\\Cryptlex.NetCore\\Cryptlex.NetCore\\Cryptlex.NetCore.csproj",
     "projectName": "Cryptlex.NetCore",
-    "projectPath": "/Users/andrewbell/RiderProjects/Cryptlex.NetCore/Cryptlex.NetCore/Cryptlex.NetCore.csproj",
-    "outputPath": "/Users/andrewbell/RiderProjects/Cryptlex.NetCore/Cryptlex.NetCore/obj/",
+    "projectPath": "C:\\Users\\andyb\\RiderProjects\\Cryptlex.NetCore\\Cryptlex.NetCore\\Cryptlex.NetCore.csproj",
+    "outputPath": "C:\\Users\\andyb\\RiderProjects\\Cryptlex.NetCore\\Cryptlex.NetCore\\obj\\",
     "projectStyle": "PackageReference",
     "fallbackFolders": [
-      "/usr/local/share/dotnet/sdk/NuGetFallbackFolder"
+      "C:\\Microsoft\\Xamarin\\NuGet",
+      "C:\\Program Files\\dotnet\\sdk\\NuGetFallbackFolder"
     ],
     "originalTargetFrameworks": [
       "netstandard2.0"
     ],
     "sources": {
+      "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
       "https://api.nuget.org/v3/index.json": {}
     },
     "frameworks": {
@@ -29,6 +31,10 @@
   "frameworks": {
     "netstandard2.0": {
       "dependencies": {
+        "Microsoft.CSharp": {
+          "target": "Package",
+          "version": "[4.6.0, )"
+        },
         "Microsoft.IdentityModel.JsonWebTokens": {
           "target": "Package",
           "version": "[5.5.0, )"
@@ -57,12 +63,7 @@
         }
       },
       "imports": [
-        "net461",
-        "net462",
-        "net47",
-        "net471",
-        "net472",
-        "net48"
+        "net461"
       ],
       "assetTargetFallback": true,
       "warn": true
